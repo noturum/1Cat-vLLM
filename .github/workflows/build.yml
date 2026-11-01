@@ -27,9 +27,9 @@ jobs:
 
     # 3. Установка CUDA Toolkit 12.8
     - name: Install CUDA 12.8
-      uses: Jimver/cuda-toolkit@v0.2.16
+      uses: Jimver/cuda-toolkit@v0.2.25
       with:
-        cuda: '12.8.1'
+        cuda: '12.8.0'
         method: 'network'
         sub-packages: '["nvcc", "cudart", "cublas", "curand", "cusparse", "cusolver"]'
 
