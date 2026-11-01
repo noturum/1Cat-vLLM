@@ -11,7 +11,7 @@ on:
 jobs:
   build-wheel:
     name: Build Wheel (Python 3.12, CUDA 12.8, SM70)
-    runs-on: ubuntu-22.04   # Рекомендуемый образ для CUDA 12.8
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
 
     steps:
@@ -19,51 +19,65 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. Установка Python 3.12 (требование проекта)
+    # 2. Установка Python 3.12
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
-    # 3. Установка CUDA Toolkit 12.8
+    # 3. Кэширование pip и torch (ускоряет повторные сборки)
+    - name: Cache pip and torch
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.cache/torch
+        key: ${{ runner.os }}-pip-torch-${{ hashFiles('**/requirements*.txt', 'pyproject.toml', 'setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-torch-
+
+    # 4. Очистка дублирующегося репозитория CUDA (убирает предупреждения apt)
+    - name: Remove duplicate CUDA repository
+      run: |
+        sudo rm -f /etc/apt/sources.list.d/cuda-ubuntu2204-x86_64.list
+      continue-on-error: true
+
+    # 5. Установка CUDA 12.8 с правильными именами пакетов
     - name: Install CUDA 12.8
-      uses: Jimver/cuda-toolkit@v0.2.25
+      uses: Jimver/cuda-toolkit@v0.2.35
       with:
         cuda: '12.8.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart", "cublas", "curand", "cusparse", "cusolver"]'
+        sub-packages: '["nvcc", "cudart"]'
+        non-cuda-sub-packages: '["libcublas", "libcurand", "libcusparse", "libcusolver"]'
 
-    # 4. Установка системных зависимостей (компиляторы, ninja, patchelf)
+    # 6. Установка системных зависимостей
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential ninja-build patchelf
 
-    # 5. Установка Python-зависимостей для сборки
+    # 7. Установка Python-зависимостей для сборки
     - name: Install Python build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build wheel setuptools torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+        pip install build wheel setuptools
+        pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
 
-    # 6. Сборка wheel-пакета
+    # 8. Сборка wheel-пакета
     - name: Build wheel
       env:
-        # Ключевые переменные для сборки под SM70
         TORCH_CUDA_ARCH_LIST: "7.0"
         CMAKE_CUDA_ARCHITECTURES: "70"
         CUDA_HOME: "/usr/local/cuda-12.8"
-        # Отключаем изоляцию сборки для использования установленных зависимостей
         PIP_NO_BUILD_ISOLATION: "1"
       run: |
-        # Сборка wheel
         python -m build --wheel --no-isolation
-        
-        # Проверка созданного артефакта
         ls -lh dist/
         echo "Wheel built successfully:"
         find dist/ -name "*.whl" -exec basename {} \;
 
-    # 7. Загрузка wheel как артефакта
+    # 9. Загрузка wheel как артефакта
     - name: Upload Wheel Artifact
       uses: actions/upload-artifact@v4
       with:
