@@ -44,14 +44,14 @@ jobs:
         sudo rm -f /etc/apt/sources.list.d/cuda-ubuntu2204-x86_64.list
       continue-on-error: true
 
-    # 5. Установка CUDA 12.8 с правильными именами пакетов
+    # 5. Установка CUDA 12.8 с dev-пакетами (критично для CMake)
     - name: Install CUDA 12.8
       uses: Jimver/cuda-toolkit@v0.2.35
       with:
         cuda: '12.8.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart"]'
-        non-cuda-sub-packages: '["libcublas", "libcurand", "libcusparse", "libcusolver"]'
+        sub-packages: '["nvcc", "nvrtc-dev"]'
+        non-cuda-sub-packages: '["libcublas-dev", "libcurand-dev", "libcusparse-dev", "libcusolver-dev"]'
 
     # 6. Установка системных зависимостей
     - name: Install system dependencies
@@ -69,7 +69,7 @@ jobs:
     - name: Install Python build dependencies
       run: |
         python -m pip install --upgrade pip
-        # Явно фиксируем setuptools в требуемом диапазоне (<81.0.0), иначе сборка упадёт
+        # Явно фиксируем setuptools в требуемом диапазоне (<81.0.0)
         pip install "setuptools>=77.0.3,<81.0.0"
         # Остальные build-зависимости, включая patchelf и numpy
         pip install build wheel setuptools_scm setuptools-rust packaging jinja2 ninja cmake patchelf numpy
@@ -85,6 +85,9 @@ jobs:
         rustc --version
         cargo --version
         nvcc --version || true
+        # Проверяем, что CMake видит cuBLAS и nvrtc
+        ls /usr/local/cuda-12.8/lib64/libcublas* | head -1 || true
+        ls /usr/local/cuda-12.8/lib64/libnvrtc* | head -1 || true
 
     # 10. Сборка wheel-пакета
     - name: Build wheel
