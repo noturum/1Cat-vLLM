@@ -15,9 +15,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
-    # 1. Клонирование репозитория
+    # 1. Клонирование репозитория (fetch-depth: 0 — чтобы setuptools_scm корректно определял версию)
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     # 2. Установка Python 3.12
     - name: Set up Python 3.12
@@ -51,7 +53,7 @@ jobs:
         sub-packages: '["nvcc", "cudart"]'
         non-cuda-sub-packages: '["libcublas", "libcurand", "libcusparse", "libcusolver"]'
 
-    # 6. Установка системных зависимостей (компиляторы, ninja, patchelf)
+    # 6. Установка системных зависимостей
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -61,23 +63,36 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    # 8. Установка Python build-зависимостей (включая setuptools-rust и др.)
+    # 8. Установка Python build-зависимостей
     #    --no-isolation отключает автоустановку из [build-system] requires,
     #    поэтому все пакеты ставим вручную.
     - name: Install Python build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build wheel setuptools setuptools_scm setuptools-rust packaging jinja2 ninja cmake
+        # Явно фиксируем setuptools в требуемом диапазоне (<81.0.0), иначе сборка упадёт
+        pip install "setuptools>=77.0.3,<81.0.0"
+        # Остальные build-зависимости, включая patchelf и numpy
+        pip install build wheel setuptools_scm setuptools-rust packaging jinja2 ninja cmake patchelf numpy
+        # PyTorch под CUDA 12.8
         pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
 
-    # 9. Сборка wheel-пакета
+    # 9. Проверка окружения (диагностика)
+    - name: Verify environment
+      run: |
+        python -c "import setuptools; print('setuptools:', setuptools.__version__)"
+        python -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.version.cuda)"
+        patchelf --version
+        rustc --version
+        cargo --version
+        nvcc --version || true
+
+    # 10. Сборка wheel-пакета
     - name: Build wheel
       env:
         TORCH_CUDA_ARCH_LIST: "7.0"
         CMAKE_CUDA_ARCHITECTURES: "70"
         CUDA_HOME: "/usr/local/cuda-12.8"
         PIP_NO_BUILD_ISOLATION: "1"
-        # Ограничиваем сборку только нужным расширением (опционально, ускоряет сборку)
         MAX_JOBS: "4"
         VLLM_TARGET_DEVICE: "cuda"
       run: |
@@ -86,7 +101,7 @@ jobs:
         echo "Wheel built successfully:"
         find dist/ -name "*.whl" -exec basename {} \;
 
-    # 10. Загрузка wheel как артефакта
+    # 11. Загрузка wheel как артефакта
     - name: Upload Wheel Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -94,7 +109,7 @@ jobs:
         path: dist/*.whl
         retention-days: 7
 
-    # 11. (Опционально) Загрузка логов сборки при падении
+    # 12. Загрузка логов сборки при падении
     - name: Upload build logs on failure
       if: failure()
       uses: actions/upload-artifact@v4
